@@ -212,3 +212,143 @@ def get_sem_similarities(X, d_sim=None, idf=True, documents=None):
         df_sim[name] = (sim_fw + sim_bw) / 2
 
     return df_sim
+
+def get_sem_similarities_synsets_sets(X, d_sim=None, idf=True, documents=None):
+    '''
+    Get the similarities between two sets of synsets
+    '''
+    if d_sim is None:
+        d_sim = {"wup": get_wup_similarity, "path": get_path_similarity, 
+                  "lch": get_lch_similarity, "lin": get_lin_similarity}
+
+    df_sim = pd.DataFrame()
+    for name, sim in d_sim.items():
+        if idf:
+            sim_fw = X.apply(lambda x: sum(compare_synsets_wd(x.iloc[0], x.iloc[1], documents, similarity=sim).values()), axis=1)
+            sim_bw = X.apply(lambda x: sum(compare_synsets_wd(x.iloc[1], x.iloc[0], documents, similarity=sim).values()), axis=1)
+        else:
+            sim_fw = X.apply(lambda x: sum(compare_synsets_wd(x.iloc[0], x.iloc[1], idf=idf, similarity=sim).values()), axis=1)
+            sim_bw = X.apply(lambda x: sum(compare_synsets_wd(x.iloc[1], x.iloc[0], idf=idf, similarity=sim).values()), axis=1)
+        
+        df_sim[name] = (sim_fw + sim_bw) / 2
+
+    return df_sim
+
+def compare_synsets_wd(ls_ls_syns1, ls_ls_syns2, documents=None, similarity=get_wup_similarity):
+    #print('ls_ls_syns1', ls_ls_syns1)
+    d_out = {}
+    for s1 in ls_ls_syns1:
+        d_out[s1] = []
+        for s2 in ls_ls_syns2:
+            try:
+                out = similarity(s1, s2)
+            except Exception as e:
+                out = 0
+            out = 0 if out is None else out
+            d_out[s1].append(out)
+            # print(syn1, syn2, out)
+        
+        if d_out[s1] != []:
+            d_out[s1] = np.max(d_out[s1])
+        else:
+            d_out[s1] = 0
+
+    return d_out
+
+def apply_lesk_algorithm(nlp_sentence):
+    '''
+    Apply the Lesk algorithm to a sentence
+    Input: text - string
+    Output: ls_processed_text - list of words
+    '''
+
+    spacy_to_wordnet_pos = {
+        "ADJ": "a",    # Adjective
+        "NOUN": "n",   # Noun
+        "PROPN": "n",  # Proper noun
+        "VERB": "v",   # Verb
+        "ADV": "r",    # Adverb
+        "NUM": "n",    # Numeral
+        "PRON": "n",   # Pronoun
+        "ADP": "n",    # Adposition (preposition or postposition)
+    }
+
+    
+    # Get the POS tag
+    ls_postagged_lemmas = [(w.lemma_.lower(), w.pos_) for w in nlp_sentence 
+                            if not w.is_stop and not w.is_punct]
+
+    # Convert the POS tag to the WordNet POS tag
+    ls_postagged_lemmas = [(lemma, spacy_to_wordnet_pos.get(pos)) 
+                         for lemma, pos in ls_postagged_lemmas]
+    
+    # Instead of using the original text for disambiguation, we use only the lemmas
+    text = ' '.join([lemma for lemma, _ in ls_postagged_lemmas])
+
+    disamb_set = set()
+    for lemma, pos in ls_postagged_lemmas:
+        # If it has a disambiguation synset, get it
+        get_disamb = nltk.wsd.lesk(text, lemma, pos)
+
+        # Otherwise, get the first synset
+        if get_disamb is None:
+            try:
+                get_disamb = wn.synsets(lemma, pos)[0].name()
+            except IndexError:
+                get_disamb = lemma
+        # If there isn't a first sentence, get the lemma
+        else:
+            get_disamb = get_disamb.name()
+
+        disamb_set.add(get_disamb)
+        
+    return disamb_set
+
+def apply_lesk_algorithm_and_return_synset(nlp_sentence):
+    '''
+    Apply the Lesk algorithm to a sentence
+    Input: text - string
+    Output: ls_processed_text - list of words
+    '''
+
+    spacy_to_wordnet_pos = {
+        "ADJ": "a",    # Adjective
+        "NOUN": "n",   # Noun
+        "PROPN": "n",  # Proper noun
+        "VERB": "v",   # Verb
+        "ADV": "r",    # Adverb
+        "NUM": "n",    # Numeral
+        "PRON": "n",   # Pronoun
+        "ADP": "n",    # Adposition (preposition or postposition)
+    }
+
+    
+    # Get the POS tag
+    ls_postagged_lemmas = [(w.lemma_.lower(), w.pos_) for w in nlp_sentence 
+                            if not w.is_stop and not w.is_punct]
+
+    # Convert the POS tag to the WordNet POS tag
+    ls_postagged_lemmas = [(lemma, spacy_to_wordnet_pos.get(pos)) 
+                         for lemma, pos in ls_postagged_lemmas]
+    
+    # Instead of using the original text for disambiguation, we use only the lemmas
+    text = ' '.join([lemma for lemma, _ in ls_postagged_lemmas])
+
+    disamb_set = set()
+    for lemma, pos in ls_postagged_lemmas:
+        # If it has a disambiguation synset, get it
+        get_disamb = nltk.wsd.lesk(text, lemma, pos)
+
+        # Otherwise, get the first synset
+        if get_disamb is None:
+            try:
+                get_disamb = wn.synsets(lemma, pos)[0]
+            except IndexError:
+                get_disamb = lemma
+        # If there isn't a first sentence, get the lemma
+        else:
+            get_disamb = get_disamb
+
+        disamb_set.add(get_disamb)
+        
+    return disamb_set
